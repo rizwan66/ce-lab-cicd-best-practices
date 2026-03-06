@@ -1,0 +1,64 @@
+name: Track Deployment
+
+on:
+  workflow_run:
+    workflows: ["CD Pipeline"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  record:
+    name: Record Deployment
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Record deployment timestamp
+        run: |
+          mkdir -p docs
+          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | ${{ github.event.workflow_run.head_sha }} | ${{ github.actor }}" >> docs/deploy-log.csv
+
+      - name: Generate deployment frequency report
+        run: |
+          cat > docs/deploy-frequency.md << 'REPORT'
+          # Deployment Frequency Report
+
+          ## Recent Deployments
+
+          | Timestamp (UTC) | Commit | Deployed By |
+          |-----------------|--------|-------------|
+          REPORT
+
+          tail -20 docs/deploy-log.csv | sort -r | while IFS='|' read -r ts sha actor; do
+            ts=$(echo "$ts" | xargs)
+            sha=$(echo "$sha" | xargs)
+            actor=$(echo "$actor" | xargs)
+            short_sha="${sha:0:7}"
+            echo "| $ts | \`$short_sha\` | @$actor |" >> docs/deploy-frequency.md
+          done
+
+          total=$(wc -l < docs/deploy-log.csv | xargs)
+          this_week=$(awk -v d="$(date -u -d '7 days ago' +%Y-%m-%d 2>/dev/null || date -u -v-7d +%Y-%m-%d)" '$1 >= d' docs/deploy-log.csv | wc -l | xargs)
+
+          cat >> docs/deploy-frequency.md << STATS
+
+          ## Summary
+
+          - **Total deployments:** $total
+          - **Deployments this week:** $this_week
+          - **DORA target:** Elite teams deploy on-demand, multiple times per day
+          STATS
+
+      - name: Commit deployment log
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/deploy-log.csv docs/deploy-frequency.md
+          git diff --cached --quiet || git commit -m "ci: record deployment $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push origin master
