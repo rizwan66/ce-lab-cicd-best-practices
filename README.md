@@ -28,3 +28,5 @@ terraform init
 terraform plan
 terraform apply
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for commit conventions, PR process, and CI/CD guidelines.
