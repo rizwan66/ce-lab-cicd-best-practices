@@ -1,0 +1,50 @@
+name: Generate Changelog
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  changelog:
+    name: Update Changelog
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: master
+
+      - name: Generate changelog from git history
+        run: |
+          echo "# Changelog" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+
+          git tag --sort=-version:refname | while read tag; do
+            prev_tag=$(git tag --sort=-version:refname | grep -A1 "^${tag}$" | tail -1)
+            tag_date=$(git log -1 --format=%ai "$tag" | cut -d' ' -f1)
+
+            echo "## [$tag] — $tag_date" >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+
+            if [ "$prev_tag" != "$tag" ]; then
+              range="${prev_tag}..${tag}"
+            else
+              range="$tag"
+            fi
+
+            git log "$range" --pretty=format:"- %s (%h)" --no-merges 2>/dev/null >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+          done
+
+      - name: Commit changelog
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git diff --cached --quiet || git commit -m "docs: update CHANGELOG.md for ${{ github.event.release.tag_name }}"
+          git push origin master
